@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>html,body{margin:0}:root{color-scheme:light dark}[hidden]{display:none!important}</style>
+<title>Attendance Forecast</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap">
+<script src="pdf.min.js"></script>
+<style>
+/* Layout: one narrow column, phone-first. Upload strip on top, verdict summary, then one card per subject sorted by urgency. */
+:root{
+  --bg:#eceef1; --surface:#ffffff; --ink:#14181f; --muted:#5b6571; --line:#d8dce2;
+  --accent:#2447d1; --accent-ink:#ffffff; --track:#e3e6eb;
+  --ok:#17794a; --ok-bg:#dcf2e5; --warn:#a35f00; --warn-bg:#fbebcc; --bad:#b8321f; --bad-bg:#fadcd6;
+  --f-display:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+  --f-body:'Instrument Sans','Segoe UI',system-ui,sans-serif;
+  --f-num:'JetBrains Mono',ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1116; --surface:#171b22; --ink:#e8ecf2; --muted:#9aa4b2; --line:#2a303a;
+  --accent:#8199ff; --accent-ink:#0e1116; --track:#262c36;
+  --ok:#5fd093; --ok-bg:#12301f; --warn:#f0b955; --warn-bg:#352609; --bad:#ff8a77; --bad-bg:#3a1812; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1116; --surface:#171b22; --ink:#e8ecf2; --muted:#9aa4b2; --line:#2a303a;
+  --accent:#8199ff; --accent-ink:#0e1116; --track:#262c36;
+  --ok:#5fd093; --ok-bg:#12301f; --warn:#f0b955; --warn-bg:#352609; --bad:#ff8a77; --bad-bg:#3a1812; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.45;
+  padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{font-family:var(--f-display);font-size:28px;line-height:1.1;margin:0;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.sub{color:var(--muted);margin:4px 0 0;font-size:14px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.drop{border:1.5px dashed var(--line);border-radius:10px;padding:16px;text-align:center;cursor:pointer;display:flex;flex-direction:column;gap:2px}
+.drop:hover,.drop.over{border-color:var(--accent)}
+.drop b{font-weight:600}.drop span{color:var(--muted);font-size:13px}
+button,.btn{font:inherit;font-weight:600;font-size:14px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:9px 12px;cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:focus-visible,input:focus-visible,summary:focus-visible,textarea:focus-visible,.drop:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+textarea{width:100%;min-height:110px;font:13px/1.4 var(--f-num);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px;resize:vertical}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.msg{font-size:13px;color:var(--muted)}.msg.err{color:var(--bad)}.msg.good{color:var(--ok)}
+.tag-sample{font-size:12px;font-weight:600;background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:3px 8px;align-self:flex-start}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sum div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.sum b{font-family:var(--f-num);font-size:24px;display:block;line-height:1.1}
+.sum span{font-size:12px;color:var(--muted)}
+.sum .k-ok b{color:var(--ok)}.sum .k-warn b{color:var(--warn)}.sum .k-bad b{color:var(--bad)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.head h3{font-family:var(--f-display);font-size:17px;margin:0;line-height:1.2;min-width:0;overflow-wrap:anywhere}
+.meta{font-size:12.5px;color:var(--muted);font-family:var(--f-num);margin-top:2px}
+.pill{font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px;white-space:nowrap}
+.pill.ok{background:var(--ok-bg);color:var(--ok)}.pill.warn{background:var(--warn-bg);color:var(--warn)}.pill.bad{background:var(--bad-bg);color:var(--bad)}
+.pct{display:flex;align-items:baseline;gap:8px}
+.pct b{font-family:var(--f-num);font-size:30px;line-height:1}
+.pct span{color:var(--muted);font-size:13px}
+.bar{position:relative;height:10px;border-radius:5px;background:var(--track);margin-top:2px}
+.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:5px;background:var(--accent)}
+.bar u{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink);text-decoration:none;border-radius:1px}
+.verdict{font-weight:500}
+.verdict.ok{color:var(--ok)}.verdict.warn{color:var(--warn)}.verdict.bad{color:var(--bad)}
+.whatif{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:10px}
+.whatif label{font-size:13px;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
+.whatif input[type=range]{width:100%;accent-color:var(--accent)}
+.proj{font-size:13.5px}.proj b{font-family:var(--f-num)}
+details summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:500}
+.edit{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
+.edit label{display:flex;flex-direction:column;gap:3px;font-size:11.5px;color:var(--muted)}
+.edit input{width:100%;min-width:0;font:600 14px var(--f-num);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 6px}
+.edit input.nm{grid-column:1/-1;font-family:var(--f-body)}
+.edit .del{grid-column:1/-1;justify-self:start;color:var(--bad)}
+.unset input.cr{border-color:var(--warn)}
+.foot{font-size:12.5px;color:var(--muted)}
+@media (max-width:380px){.edit{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (prefers-reduced-motion:no-preference){.bar i{transition:width .25s}}
+</style>
+
+</head><body>
+<div class="wrap">
+  <header>
+    <h1>Attendance Forecast</h1>
+    <p class="sub">Upload your college attendance report and see which subjects you can still skip and which need every lecture.</p>
+  </header>
+
+  <section class="panel" aria-label="Upload report">
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose attendance report">
+      <b>Upload attendance report (PDF)</b>
+      <span>Tap to choose a file, or drop it here. CSV and text work too.</span>
+    </div>
+    <input type="file" id="file" accept=".pdf,.csv,.txt,application/pdf,text/*" hidden>
+    <details>
+      <summary>Or paste the report text</summary>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+        <textarea id="paste" placeholder="12/08/2026  Data Structures  P&#10;12/08/2026  Maths II  A"></textarea>
+        <div class="row"><button class="primary" id="parse">Read pasted text</button></div>
+      </div>
+    </details>
+    <div class="msg" id="status">Parsing happens in your browser. Nothing is uploaded anywhere.</div>
+  </section>
+
+  <section class="panel" aria-label="Rules">
+    <div class="row">
+      <label for="defCredits" style="font-size:13px;color:var(--muted)">Credits for subjects still unset</label>
+      <input id="defCredits" type="number" min="1" max="10" step="0.5" value="3" style="width:70px;font:600 14px var(--f-num);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 6px">
+      <button id="applyCredits">Apply</button>
+    </div>
+    <div class="foot">Total lectures = credits × 15. Minimum attendance defaults to 80% and can be changed per subject.</div>
+  </section>
+
+  <div id="sample" class="tag-sample" hidden>Example data. Upload your report to replace it.</div>
+  <section class="sum" id="sum" aria-label="Summary"></section>
+  <section id="list" style="display:flex;flex-direction:column;gap:12px"></section>
+  <div class="row"><button id="add">Add a subject</button><button id="clear">Clear all</button></div>
+</div>
+
+<script>
+(function(){
+  var LPC = 15;
+  var $ = function(s){return document.querySelector(s)};
+  var subjects = [], isSample = false, skips = {}, uid = 1;
+
+  function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+  function mk(name,held,att,credits,csSet,req){return {id:uid++,name:name,held:held,att:att,credits:credits||3,cs:!!csSet,req:req||80}}
+
+  /* Credits for this semester's courses, matched on the course name in the report. Excluded courses are ignored. */
+  var CREDIT_RULES=[[/account/i,4],[/company law/i,4],[/principles of management/i,3],[/math/i,4],[/fin\w*\s*m\w*\s*(and|&)?\s*inst|financial market/i,4],[/ancient/i,1]];
+  var EXCLUDE=/yoga|soft skills/i;
+  function creditFor(name){for(var i=0;i<CREDIT_RULES.length;i++)if(CREDIT_RULES[i][0].test(name))return CREDIT_RULES[i][1];return null}
+  function sampleData(){ // counts from the report covering 01 Jul to 14 Oct 2026
+    return [['Company Law',53,49],['Busi Maths with Spreadsheets',47,44],['Business Accntg and Analysis',42,39],
+            ['Principles of Management',37,33],['Fin Mrkt and Inst',47,45],['Busi and Trade in Ancient Ind',11,11]]
+      .map(function(r){return mk(r[0],r[1],r[2],creditFor(r[0]),true)});
+  }
+
+  function save(){try{localStorage.setItem('attfc.v1',JSON.stringify({subjects:subjects,uid:uid}))}catch(e){}}
+  function load(){try{var d=JSON.parse(localStorage.getItem('attfc.v1')||'null');if(d&&d.subjects&&d.subjects.length){subjects=d.subjects;uid=d.uid||100;return true}}catch(e){}return false}
+
+  /* ---- forecast maths ---- */
+  function calc(s){
+    var total=Math.round(s.credits*LPC), held=s.held, att=Math.min(s.att,s.held);
+    var reqN=Math.ceil(s.req/100*total-1e-9);
+    var remaining=Math.max(0,total-held);
+    var den=held+remaining;
+    var need=Math.max(0,reqN-att);
+    var skippable=remaining-need;
+    var curPct=held?att/held*100:0;
+    var maxPct=den?(att+remaining)/den*100:0;
+    var status=skippable<0?'bad':(skippable<=1?'warn':'ok');
+    return {total:total,reqN:reqN,remaining:remaining,den:den,need:need,skippable:skippable,curPct:curPct,maxPct:maxPct,status:status,att:att};
+  }
+  function fmt(x){return (Math.round(x*10)/10).toFixed(1)}
+
+  function verdict(s,c){
+    if(c.skippable<0) return ['bad','Out of reach. Even with every remaining lecture you finish at '+fmt(c.maxPct)+'%.'];
+    if(c.remaining===0) return [c.att>=c.reqN?'ok':'bad', c.att>=c.reqN?'Course complete and requirement met.':'Course complete and below requirement.'];
+    if(c.need===0&&c.skippable>0) return ['ok','Requirement already secured. You can miss '+c.skippable+' of the last '+c.remaining+'.'];
+    if(c.skippable===0) return ['warn','No slack. Attend all '+c.remaining+' remaining lectures.'];
+    if(c.skippable===1) return ['warn','Only 1 skip left. Attend at least '+c.need+' of the next '+c.remaining+'.'];
+    return ['ok','You can skip '+c.skippable+' of the next '+c.remaining+'. Attend at least '+c.need+'.'];
+  }
+  var PILL={ok:'Safe',warn:'Tight',bad:'Short'};
+
+  function resHtml(s,c){
+    var v=verdict(s,c);
+    var w=Math.max(0,Math.min(100,c.curPct)), m=Math.max(0,Math.min(100,s.req));
+    return '<div class="pct"><b>'+fmt(c.curPct)+'%</b><span>now · need '+s.req+'% · '+c.att+'/'+s.held+' attended</span></div>'+
+      '<div class="bar" role="img" aria-label="Attendance '+fmt(c.curPct)+' percent, requirement '+s.req+' percent"><i style="width:'+w+'%"></i><u style="left:calc('+m+'% - 1px)"></u></div>'+
+      '<div class="verdict '+v[0]+'">'+esc(v[1])+'</div>';
+  }
+  function projHtml(s,c,skip){
+    var fin=c.den?(c.att+c.remaining-skip)/c.den*100:0;
+    var ok=fin+1e-9>=s.req;
+    return 'Finish at <b>'+fmt(fin)+'%</b> · '+(ok?'<span style="color:var(--ok);font-weight:600">meets '+s.req+'%</span>':'<span style="color:var(--bad);font-weight:600">below '+s.req+'%</span>');
+  }
+
+  function cardHtml(s){
+    var c=calc(s), v=verdict(s,c);
+    var sk=Math.min(skips[s.id]||0,c.remaining);
+    return '<article class="card'+(s.cs?'':' unset')+'" data-id="'+s.id+'">'+
+      '<div class="head"><div style="min-width:0"><h3>'+esc(s.name)+'</h3><div class="meta">'+s.credits+' cr · '+c.total+' lectures · '+c.remaining+' left</div></div><span class="pill '+c.status+'" data-pill>'+PILL[c.status]+'</span></div>'+
+      '<div data-res style="display:flex;flex-direction:column;gap:8px">'+resHtml(s,c)+'</div>'+
+      (c.remaining>0?'<div class="whatif"><label for="sk'+s.id+'"><span>If I skip this many of the remaining '+c.remaining+'</span><b data-skv style="font-family:var(--f-num);color:var(--ink)">'+sk+'</b></label>'+
+        '<input type="range" id="sk'+s.id+'" data-skip min="0" max="'+c.remaining+'" value="'+sk+'"><div class="proj" data-proj>'+projHtml(s,c,sk)+'</div></div>':'')+
+      '<details><summary>Edit numbers</summary><div class="edit">'+
+        '<input class="nm" data-f="name" value="'+esc(s.name)+'" aria-label="Subject name">'+
+        '<label>Credits<input class="cr" type="number" inputmode="decimal" min="0.5" step="0.5" data-f="credits" value="'+s.credits+'"></label>'+
+        '<label>Held<input type="number" inputmode="numeric" min="0" data-f="held" value="'+s.held+'"></label>'+
+        '<label>Attended<input type="number" inputmode="numeric" min="0" data-f="att" value="'+s.att+'"></label>'+
+        '<label>Need %<input type="number" inputmode="numeric" min="1" max="100" data-f="req" value="'+s.req+'"></label>'+
+        '<button class="del" data-del>Remove subject</button></div></details>'+
+    '</article>';
+  }
+
+  function sortKey(s){var c=calc(s);return c.skippable}
+  function render(){
+    var list=$('#list');
+    var sorted=subjects.slice().sort(function(a,b){return sortKey(a)-sortKey(b)});
+    list.innerHTML=sorted.length?sorted.map(cardHtml).join(''):'<div class="panel msg">No subjects yet. Upload a report or add one by hand.</div>';
+    $('#sample').hidden=!isSample;
+    summary();
+  }
+  function summary(){
+    var n={ok:0,warn:0,bad:0};
+    subjects.forEach(function(s){n[calc(s).status]++});
+    $('#sum').innerHTML='<div class="k-ok"><b>'+n.ok+'</b><span>Safe</span></div><div class="k-warn"><b>'+n.warn+'</b><span>Tight</span></div><div class="k-bad"><b>'+n.bad+'</b><span>Short</span></div>';
+  }
+  function byId(id){for(var i=0;i<subjects.length;i++)if(subjects[i].id==id)return subjects[i]}
+
+  function refreshCard(card,s){
+    var c=calc(s);
+    card.querySelector('[data-res]').innerHTML=resHtml(s,c);
+    var p=card.querySelector('[data-pill]');p.className='pill '+c.status;p.textContent=PILL[c.status];
+    card.querySelector('h3').textContent=s.name;
+    card.querySelector('.meta').textContent=s.credits+' cr · '+c.total+' lectures · '+c.remaining+' left';
+    card.classList.toggle('unset',!s.cs);
+    var r=card.querySelector('[data-skip]');
+    if(r){
+      r.max=c.remaining;
+      var sk=Math.min(skips[s.id]||0,c.remaining);
+      if(c.remaining<=0){var w=card.querySelector('.whatif');if(w)w.remove()}
+      else{r.value=sk;card.querySelector('[data-skv]').textContent=sk;card.querySelector('[data-proj]').innerHTML=projHtml(s,c,sk)}
+    }
+    summary();
+  }
+
+  /* ---- events ---- */
+  $('#list').addEventListener('input',function(e){
+    var card=e.target.closest('.card');if(!card)return;
+    var s=byId(card.dataset.id);if(!s)return;
+    if(e.target.hasAttribute('data-skip')){
+      var c=calc(s);skips[s.id]=+e.target.value;
+      card.querySelector('[data-skv]').textContent=e.target.value;
+      card.querySelector('[data-proj]').innerHTML=projHtml(s,c,+e.target.value);return;
+    }
+    var f=e.target.dataset.f;if(!f)return;
+    if(f==='name')s.name=e.target.value||'Untitled';
+    else{
+      var v=parseFloat(e.target.value);if(isNaN(v)||v<0)v=0;
+      if(f==='req')v=Math.min(100,Math.max(1,v));
+      s[f]=v;if(f==='credits'){s.cs=true;if(v<=0)s.credits=0.5}
+    }
+    isSample=false;$('#sample').hidden=true;
+    refreshCard(card,s);save();
+  });
+  $('#list').addEventListener('click',function(e){
+    if(e.target.hasAttribute('data-del')){
+      var card=e.target.closest('.card');
+      subjects=subjects.filter(function(s){return s.id!=card.dataset.id});
+      save();render();
+    }
+  });
+  $('#add').onclick=function(){subjects.push(mk('New subject',0,0,3,false));isSample=false;save();render()};
+  $('#clear').onclick=function(){subjects=[];isSample=false;save();render();setStatus('Cleared.')};
+  $('#applyCredits').onclick=function(){
+    var v=parseFloat($('#defCredits').value);if(!(v>0))return;
+    subjects.forEach(function(s){if(!s.cs)s.credits=v});
+    save();render();
+  };
+
+  function setStatus(t,cls){var el=$('#status');el.textContent=t;el.className='msg'+(cls?' '+cls:'')}
+
+  /* ---- report parsing ---- */
+  var MONTH='Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec';
+  var DATE_RE=new RegExp('\\b\\d{1,2}[\\/\\-.]\\d{1,2}[\\/\\-.]\\d{2,4}\\b|\\b\\d{4}-\\d{2}-\\d{2}\\b|\\b\\d{1,2}(?:st|nd|rd|th)?[\\s-]?(?:'+MONTH+')[a-z]*\\.?,?[\\s-]?\\d{0,4}\\b','gi');
+  var TIME_RE=/\b\d{1,2}[:.]\d{2}\s?(?:am|pm)?(?:\s?(?:-|–|to)\s?\d{1,2}[:.]\d{2}\s?(?:am|pm)?)?/gi;
+  var TOK_RE=/\b(?:Present|Absent|PRESENT|ABSENT|present|absent|PR|AB|OD|P|A)\b/g;
+  var DAY_RE=/\b(?:Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun)[a-z]*\b/gi;
+  var SKIP_HEAD=/^(date|subject|status|day|sr|s\.?\s?no|total|name|roll|student|attendance|report|page|class|semester|course|summary|overall|grand)\b/i;
+
+  var ROW_RE=/^\s*(\d+)\s+(.+?)-\d{3,5}-[A-Za-z0-9]+-[A-Za-z0-9]+\s+([A-Z][a-z]{2}\s+\d{1,2},\s+\d{4})\s+\d{1,2}:\d{2}:\d{2}\s?[AP]M\s+\d{1,2}:\d{2}:\d{2}\s?[AP]M\s+(P|A|E|L|NU)\s*$/i;
+  function isPresent(t){return /^(P|PR|OD|present)$/i.test(t)}
+  function cleanName(t){
+    t=t.replace(DAY_RE,' ').replace(/\b(?:period|lecture|lec|hour|hr|slot|session)\s*[-:]?\s*\d*\b/gi,' ')
+       .replace(/^\s*\d+[\.\)]\s+/,'').replace(/(^|\s)\d{1,2}(?=\s|$)/g,' ')
+       .replace(/[|,;:_]+/g,' ').replace(/\s+/g,' ').trim();
+    return t;
+  }
+  function validName(n){return n.length>=3&&/[A-Za-z]{2}/.test(n)&&!SKIP_HEAD.test(n)}
+
+  function parseLines(lines){
+    var map={},order=[];
+    function bump(name,p,a){
+      var key=name.toUpperCase();
+      if(!map[key]){map[key]={name:name,held:0,att:0};order.push(key)}
+      map[key].held+=p+a;map[key].att+=p;
+    }
+    var matrixHits=0,dateHits=0,summHits=0,rowHits=0,skipped=0;
+    lines.forEach(function(raw){
+      var line=raw.replace(/\s+/g,' ').trim();if(!line)return;
+      // 0) SAP style row: 12 Fin Mrkt and Inst-7412-T1-C Jul 16, 2026 11:00:01 AM 12:00:00 PM P
+      var S=line.match(ROW_RE);
+      if(S){
+        var rn=cleanName(S[2]);
+        if(validName(rn)){
+          var st=S[4].toUpperCase();
+          if(st==='P'||st==='E')bump(rn,1,0);
+          else if(st==='A')bump(rn,0,1);
+          else{bump(rn,0,0);skipped++}
+          rowHits++;
+        }
+        return;
+      }
+      // 1) summary row: Name  held  attended  percent
+      var m=line.match(/^(.*?[A-Za-z].*?)\s+(\d{1,3})\s+(\d{1,3})\s+(\d{1,3}(?:\.\d+)?)\s*%?$/);
+      if(m){
+        var h=+m[2],a=+m[3],pc=+m[4],nm=cleanName(m[1]);
+        if(h>=a&&h>0&&Math.abs(a/h*100-pc)<1.6&&validName(nm)){
+          var key=nm.toUpperCase();
+          if(!map[key])order.push(key);
+          map[key]={name:nm,held:h,att:a};summHits++;return;
+        }
+      }
+      var noDate=line.replace(DATE_RE,' ');
+      var hadDate=noDate!==line;
+      var rest=noDate.replace(TIME_RE,' ');
+      var toks=rest.match(TOK_RE)||[];
+      if(toks.length>=4){ // 2) matrix row: Subject  P P A P ...
+        var first=rest.search(TOK_RE),nm2=cleanName(rest.slice(0,first));
+        if(validName(nm2)){
+          var p=0,a2=0;toks.forEach(function(t){isPresent(t)?p++:(/^(A|AB|absent)$/i.test(t)?a2++:0)});
+          bump(nm2,p,a2);matrixHits++;
+        }
+        return;
+      }
+      if(hadDate&&toks.length===1){ // 3) date-wise row
+        var tok=toks[0];
+        var nm3=cleanName(rest.replace(TOK_RE,' '));
+        if(validName(nm3)){bump(nm3,isPresent(tok)?1:0,isPresent(tok)?0:1);dateHits++}
+      }
+    });
+    return {rows:order.map(function(k){return map[k]}),skipped:skipped,mode:rowHits?'college report':(summHits?'summary':(matrixHits?'matrix':'date-wise'))};
+  }
+
+  function useRows(rows,label,skipped){
+    if(!rows.length){
+      setStatus('I could not find lectures marked present or absent in that file. Paste a few lines of the report into the box, or add subjects by hand.','err');return;
+    }
+    var old={};subjects.forEach(function(s){old[s.name.toUpperCase()]=s});
+    var dropped=rows.filter(function(r){return EXCLUDE.test(r.name)}).length;
+    rows=rows.filter(function(r){return !EXCLUDE.test(r.name)});
+    subjects=rows.map(function(r){
+      var o=old[r.name.toUpperCase()],cf=creditFor(r.name);
+      if(o&&o.cs)return mk(r.name,r.held,r.att,o.credits,true,o.req);
+      if(cf)return mk(r.name,r.held,r.att,cf,true);
+      return mk(r.name,r.held,r.att,+$('#defCredits').value||3,false);
+    });
+    if(dropped)skipped=(skipped||0);
+    isSample=false;skips={};save();render();
+    setStatus('Found '+rows.length+' subjects ('+label+').'+(skipped?' '+skipped+' lectures marked Not Updated or Late Admission were left out of the counts.':'')+''+(subjects.some(function(s){return !s.cs})?' Some subjects have no saved credits. Set them under Edit numbers.':' Credits applied. Yoga and Soft Skills are ignored.'),'good');
+  }
+
+  function textFromPdf(buf){
+    return pdfjsLib.getDocument({data:buf}).promise.then(function(pdf){
+      var jobs=[];for(var i=1;i<=pdf.numPages;i++)jobs.push(pdf.getPage(i).then(function(pg){return pg.getTextContent()}));
+      return Promise.all(jobs);
+    }).then(function(pages){
+      var lines=[];
+      pages.forEach(function(tc){
+        var rows=[];
+        tc.items.forEach(function(it){
+          if(!it.str||!it.str.trim())return;
+          var y=it.transform[5],x=it.transform[4],r=null;
+          for(var i=0;i<rows.length;i++){if(Math.abs(rows[i].y-y)<3){r=rows[i];break}}
+          if(!r){r={y:y,items:[]};rows.push(r)}
+          r.items.push({x:x,s:it.str});
+        });
+        rows.sort(function(a,b){return b.y-a.y});
+        rows.forEach(function(r){r.items.sort(function(a,b){return a.x-b.x});lines.push(r.items.map(function(i){return i.s}).join(' '))});
+      });
+      return lines;
+    });
+  }
+
+  function handleFile(f){
+    if(!f)return;
+    setStatus('Reading '+f.name+'…');
+    var isPdf=/\.pdf$/i.test(f.name)||f.type==='application/pdf';
+    var rd=new FileReader();
+    rd.onerror=function(){setStatus('Could not read that file.','err')};
+    rd.onload=function(){
+      var p;
+      if(isPdf){
+        if(typeof pdfjsLib==='undefined'){setStatus('The PDF reader did not load. Check your connection, or paste the report text instead.','err');return}
+        try{pdfjsLib.GlobalWorkerOptions.workerSrc='pdf.worker.min.js'}catch(e){}
+        p=textFromPdf(new Uint8Array(rd.result));
+      }else p=Promise.resolve(String(rd.result).split(/\r?\n/).map(function(l){return l.replace(/,/g,' ')}));
+      p.then(function(lines){
+        var res=parseLines(lines);
+        useRows(res.rows,res.mode+' format',res.skipped);
+      }).catch(function(){setStatus('That PDF could not be read. It may be a scanned image. Try pasting the text instead.','err')});
+    };
+    if(isPdf)rd.readAsArrayBuffer(f);else rd.readAsText(f);
+  }
+
+  var drop=$('#drop'),file=$('#file');
+  drop.onclick=function(){file.click()};
+  drop.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();file.click()}};
+  file.onchange=function(){handleFile(file.files[0]);file.value=''};
+  ['dragover','dragenter'].forEach(function(ev){drop.addEventListener(ev,function(e){e.preventDefault();drop.classList.add('over')})});
+  ['dragleave','drop'].forEach(function(ev){drop.addEventListener(ev,function(){drop.classList.remove('over')})});
+  drop.addEventListener('drop',function(e){e.preventDefault();handleFile(e.dataTransfer.files[0])});
+  $('#parse').onclick=function(){var res=parseLines($('#paste').value.split(/\r?\n/));useRows(res.rows,res.mode+' format',res.skipped)};
+
+  if(load()){isSample=false}else{subjects=sampleData();isSample=false;setStatus('Loaded from your report up to 14 Oct 2026. Upload a newer report any time to update the numbers.')}
+  render();
+})();
+</script>
+
+</body></html>
